@@ -30,7 +30,7 @@ pub async fn scrape_product(url: &str) -> anyhow::Result<Product> {
         .text()
         .collect();
     
-    Ok(Product::new(product_title, current_price))
+    Ok(Product::new(url.to_string(), product_title, current_price))
 }
 
 

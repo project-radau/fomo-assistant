@@ -7,7 +7,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let product = scraper::scrape_product(url).await?;
 
-    product.render();
+    println!("{}", product);
 
     Ok(())
 }
+
