@@ -20,4 +20,16 @@ impl Product {
             value
         }
     }
+
+    pub fn value(&self) -> f64 {
+        self.value
+    }
+
+    pub fn value_in_cents(&self) -> i64 {
+        (self.value * 100.0) as i64
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
 }
