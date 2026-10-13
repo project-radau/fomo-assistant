@@ -1,5 +1,6 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 use clap::{Parser, Subcommand};
+use comfy_table::*;
 
 mod scraper;
 mod product;
@@ -26,7 +27,7 @@ enum Commands {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let conn = database::open_database()?;
-
+    let mut table = Table::new();
     let args = Cli::parse();
 
     match args.command {
@@ -42,27 +43,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Check => {
             let current_products_db = database::get_products(&conn)?;
 
+            table
+                .set_header(vec!["Product", "Current Price", "Target Price", "Status"]);
+
             for product_db in current_products_db {
                 match scraper::scrape_product(&product_db.url).await {
                     Ok(product) => {
                         database::add_price_entry(&conn, product_db.id, product.value_in_cents(), get_current_time_in_ms())?;
 
-                        //message
+                        let mut status = Cell::new("WAIT").fg(Color::Yellow);
+
                         if product.value_in_cents() <= product_db.threshold_in_cents() {
-                            println!("BUY BUY BUY");
-                            println!("===========");
-                            println!("{0} costs {1}", product.name(), product.value());
-                            println!("===========");
-                            println!("BUY BUY BUY");
+                            status = Cell::new("BUY").fg(Color::Green);
                         }
 
-                        println!("{}", product);
+                        table.add_row(vec![
+                            Cell::new(product.name()), 
+                            Cell::new(&format!("{:.2}", product.value())), 
+                            Cell::new(&format!("{:.2}", product_db.threshold)), 
+                            status]);
                     }
-                    Err(error) => {
-                        eprintln!("Scraping fehlgeschlagen: {error}");
+                    Err(_) => {
+                        table.add_row(vec![
+                            Cell::new(product_db.url), 
+                            Cell::new("-"), 
+                            Cell::new(&format!("{:.2}", product_db.threshold)), 
+                            Cell::new("ERROR").fg(Color::Red)]);
                     }
                 }
             }
+
+            println!("{table}");
         }
     }
 
