@@ -5,6 +5,7 @@ use comfy_table::*;
 mod scraper;
 mod product;
 mod database;
+mod telegram;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -26,6 +27,8 @@ enum Commands {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenvy::dotenv().ok();
+
     let conn = database::open_database()?;
     let mut table = Table::new();
     let args = Cli::parse();
@@ -55,6 +58,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                         if product.value_in_cents() <= product_db.threshold_in_cents() {
                             status = Cell::new("BUY").fg(Color::Green);
+
+                            telegram::send_message(&format!(
+                                "{}\nAktueller Preis: {:.2}\nZielpreis: {:.2}",
+                                product.name(),
+                                product.value(),
+                                product_db.threshold
+                            )).await?;
                         }
 
                         table.add_row(vec![
