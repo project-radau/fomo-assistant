@@ -117,29 +117,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     match result_last_alert {
                                         Some(last_alert) => {
                                             if last_alert.0 > product.value_in_cents() || get_current_time_in_ms() - last_alert.1 > (1000 * 60 * 60 * 24 * 7) {
-                                                telegram::send_message(&format!(
+                                                match telegram::send_message(&format!(
                                                     "{}\nAktueller Preis: {:.2}\nZielpreis: {:.2}",
                                                     product.name(),
                                                     product.value(),
                                                     product_db.threshold
-                                                )).await?;
-                                                database::add_alert_log(&conn, product_db.id, product.value_in_cents(), get_current_time_in_ms())?;
+                                                )).await {
+                                                    Ok(()) => {
+                                                        database::add_alert_log(&conn, product_db.id, product.value_in_cents(), get_current_time_in_ms())?;
+                                                    },
+                                                    Err(err) => {
+                                                        eprintln!("{}", err)
+                                                    }
+                                                }
                                             }
                                         }
                                         None => {
-                                            telegram::send_message(&format!(
-                                                "{}\nAktueller Preis: {:.2}\nZielpreis: {:.2}",
-                                                product.name(),
-                                                product.value(),
-                                                product_db.threshold
-                                            )).await?;
-                                            database::add_alert_log(&conn, product_db.id, product.value_in_cents(), get_current_time_in_ms())?;
+                                            match telegram::send_message(&format!(
+                                                    "{}\nAktueller Preis: {:.2}\nZielpreis: {:.2}",
+                                                    product.name(),
+                                                    product.value(),
+                                                    product_db.threshold
+                                                )).await {
+                                                Ok(()) => {
+                                                    database::add_alert_log(&conn, product_db.id, product.value_in_cents(), get_current_time_in_ms())?;
+                                                },
+                                                Err(err) => {
+                                                    eprintln!("{}", err)
+                                                }
+                                            }
                                         }
                                     }
                                 }
                                 Err(err) => {
                                     eprintln!("{}", err);
-                                    continue;
                                 }
                             }
                         }
@@ -150,7 +161,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             Cell::new(&format!("{:.2}", product_db.threshold)), 
                             status]);
                     }
-                    Err(_) => {
+                    Err(err) => {
+                        eprintln!("{}", err);
                         table.add_row(vec![
                             Cell::new(product_db.url), 
                             Cell::new("-"), 

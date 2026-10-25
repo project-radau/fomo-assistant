@@ -1,12 +1,15 @@
 use crate::product::Product;
 use scraper::Selector;
+use anyhow::Context;
 
 
 pub async fn scrape_product(url: &str) -> anyhow::Result<Product> {
     let body = reqwest::get(url)
-        .await?
+        .await
+        .context("error while requesting product url")?
         .text()
-        .await?;
+        .await
+        .context("failed to read product page response")?;
 
     let document = scraper::Html::parse_document(&body);
     
