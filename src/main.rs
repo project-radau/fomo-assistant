@@ -59,12 +59,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         if product.value_in_cents() <= product_db.threshold_in_cents() {
                             status = Cell::new("BUY").fg(Color::Green);
 
-                            telegram::send_message(&format!(
-                                "{}\nAktueller Preis: {:.2}\nZielpreis: {:.2}",
-                                product.name(),
-                                product.value(),
-                                product_db.threshold
-                            )).await?;
+                            match database::get_last_alert(&conn, product_db.id) {
+                                Ok(result_last_alert) => {
+                                    match result_last_alert {
+                                        Some(last_alert) => {
+                                            if last_alert.0 > product.value_in_cents() || get_current_time_in_ms() - last_alert.1 > (1000 * 60 * 60 * 24 * 7) {
+                                                telegram::send_message(&format!(
+                                                    "{}\nAktueller Preis: {:.2}\nZielpreis: {:.2}",
+                                                    product.name(),
+                                                    product.value(),
+                                                    product_db.threshold
+                                                )).await?;
+                                                database::add_alert_log(&conn, product_db.id, product.value_in_cents(), get_current_time_in_ms())?;
+                                            }
+                                        }
+                                        None => {
+                                            telegram::send_message(&format!(
+                                                "{}\nAktueller Preis: {:.2}\nZielpreis: {:.2}",
+                                                product.name(),
+                                                product.value(),
+                                                product_db.threshold
+                                            )).await?;
+                                            database::add_alert_log(&conn, product_db.id, product.value_in_cents(), get_current_time_in_ms())?;
+                                        }
+                                    }
+                                }
+                                Err(err) => {
+                                    eprintln!("{}", err);
+                                    continue;
+                                }
+                            }
                         }
 
                         table.add_row(vec![

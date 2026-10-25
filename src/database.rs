@@ -1,4 +1,4 @@
-use rusqlite::{Connection, Result};
+use rusqlite::{Connection, Result, OptionalExtension};
 use std::fmt;
 
 #[derive(Debug)]
@@ -56,6 +56,18 @@ pub fn open_database() -> anyhow::Result<Connection> {
         ()
     )?;
 
+    conn.execute(
+        "
+        CREATE TABLE IF NOT EXISTS alert_logs (
+            id INTEGER PRIMARY KEY,
+            product_id INTEGER NOT NULL,
+            price INTEGER NOT NULL,
+            timestamp INTEGER NOT NULL,
+            FOREIGN KEY (product_id) REFERENCES products(id)
+        );", 
+        ()
+    )?;
+
     Ok(conn)
 }
 
@@ -89,4 +101,32 @@ pub fn add_price_entry(conn: &Connection, product_id: i32, price: i64, timestamp
         "INSERT INTO price_history (product_id, price, timestamp) VALUES (?1, ?2, ?3)",
         (product_id, price, timestamp),
     )
+}
+
+pub fn add_alert_log(
+        conn: &Connection,
+        product_id: i32,
+        price: i64,
+        timestamp: i64,
+    ) -> Result<usize, rusqlite::Error> {
+    conn.execute(
+        "INSERT INTO alert_logs (product_id, price, timestamp) VALUES (?1, ?2, ?3)",
+        (product_id, price, timestamp),
+    )
+}
+
+pub fn get_last_alert(
+        conn: &Connection,
+        product_id: i32,
+    ) -> Result<Option<(i64, i64)>, rusqlite::Error> {
+    conn.query_row(
+        "SELECT price, timestamp
+         FROM alert_logs
+         WHERE product_id = ?1
+         ORDER BY timestamp DESC
+         LIMIT 1",
+        [product_id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )
+    .optional()
 }
