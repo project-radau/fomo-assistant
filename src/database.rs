@@ -96,6 +96,28 @@ pub fn add_product(conn: &Connection, url: &str, threshold: f64) -> Result<usize
     )
 }
 
+pub fn remove_product(conn: &mut Connection, id: i32) -> Result<usize, rusqlite::Error> {
+    let tx = conn.transaction()?;
+
+    tx.execute(
+        "DELETE FROM price_history WHERE product_id = ?1",
+        [id],
+    )?;
+
+    tx.execute(
+        "DELETE FROM alert_logs WHERE product_id = ?1",
+        [id],
+    )?;
+
+    let ret = tx.execute(
+        "DELETE FROM products WHERE id = ?1",
+        [id],
+    )?;
+
+    tx.commit()?;
+    Ok(ret)
+}
+
 pub fn add_price_entry(conn: &Connection, product_id: i32, price: i64, timestamp: i64) -> Result<usize, rusqlite::Error> {
     conn.execute(
         "INSERT INTO price_history (product_id, price, timestamp) VALUES (?1, ?2, ?3)",

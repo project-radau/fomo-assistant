@@ -1,3 +1,4 @@
+use std::io;
 use std::time::{SystemTime, UNIX_EPOCH};
 use clap::{Parser, Subcommand};
 use comfy_table::*;
@@ -21,6 +22,7 @@ enum Commands {
         #[arg(short, long)]
         threshold: f64,
     },
+    Remove,
     List,
     Check
 }
@@ -29,7 +31,7 @@ enum Commands {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
-    let conn = database::open_database()?;
+    let mut conn = database::open_database()?;
     let mut table = Table::new();
     let args = Cli::parse();
 
@@ -37,11 +39,62 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Add { url, threshold } =>  {
             database::add_product(&conn, &url, threshold)?;
         },
-        Commands::List => {
-            let items = database::get_products(&conn)?;
-            for item in items {
-                println!("{}", item);
+        Commands::Remove => {
+            let current_products_db = database::get_products(&conn)?;
+
+            table
+                .set_header(vec!["ID", "Product", "Target Price"]);
+
+            for product_db in current_products_db {
+                table.add_row(vec![
+                    Cell::new(product_db.id), 
+                    Cell::new(&product_db.url), 
+                    Cell::new(&format!("{:.2}", product_db.threshold))
+                ]);
             }
+
+            println!("{table}");
+
+            println!("please insert the id:");
+            let mut input = String::new();
+            io::stdin().read_line(&mut input)?;
+
+            match input.trim().parse::<i32>() {
+                Ok(value) => {
+                    match database::remove_product(&mut conn, value) {
+                        Ok(result) => {
+                            if result > 0 {
+                                println!("product deleted.");
+                            }
+                            else {
+                                eprintln!("product not found");
+                            }
+                        }
+                        Err(err) => {
+                            eprintln!("{}", err)
+                        }
+                    }
+                }
+                Err(_) => {
+                    eprintln!("Invalid ID. Please enter a number.");
+                }
+            }
+        }
+        Commands::List => {
+            let current_products_db = database::get_products(&conn)?;
+
+            table
+                .set_header(vec!["ID", "Product", "Target Price"]);
+
+            for product_db in current_products_db {
+                table.add_row(vec![
+                    Cell::new(product_db.id), 
+                    Cell::new(&product_db.url), 
+                    Cell::new(&format!("{:.2}", product_db.threshold))
+                ]);
+            }
+
+            println!("{table}");
         },
         Commands::Check => {
             let current_products_db = database::get_products(&conn)?;
@@ -128,4 +181,3 @@ fn get_current_time_in_ms() -> i64 {
 
     in_ms as i64
 }
-
