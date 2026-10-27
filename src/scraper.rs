@@ -7,6 +7,7 @@ pub async fn scrape_product(url: &str) -> anyhow::Result<Product> {
     let body = reqwest::get(url)
         .await
         .context("error while requesting product url")?
+        .error_for_status()?
         .text()
         .await
         .context("failed to read product page response")?;
@@ -24,7 +25,8 @@ pub async fn scrape_product(url: &str) -> anyhow::Result<Product> {
         .collect();
 
     let current_price = cleanup_current_value(&current_price_string)
-        .parse::<f64>()?;
+        .parse::<f64>()
+        .context("error converting price to value")?;
 
     let product_title: String = document
         .select(&selector_product_title)
