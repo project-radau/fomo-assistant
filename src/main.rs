@@ -17,6 +17,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    Run,
     Add {
         url: String,
         #[arg(short, long)]
@@ -36,6 +37,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Cli::parse();
 
     match args.command {
+        Commands::Run => {
+            telegram::run_bot().await?;
+        },
         Commands::Add { url, threshold } =>  {
             database::add_product(&conn, &url, threshold)?;
         },
