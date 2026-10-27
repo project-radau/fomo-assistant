@@ -105,7 +105,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             for product_db in current_products_db {
                 match scraper::scrape_product(&product_db.url).await {
                     Ok(product) => {
-                        database::add_price_entry(&conn, product_db.id, product.value_in_cents(), get_current_time_in_ms())?;
+                        match database::add_price_entry(&conn, product_db.id, product.value_in_cents(), get_current_time_in_ms()) {
+                            Ok(_) => {}
+                            Err(err) => eprintln!("{}", err)
+                        }
 
                         let mut status = Cell::new("WAIT").fg(Color::Yellow);
 
@@ -124,7 +127,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     product_db.threshold
                                                 )).await {
                                                     Ok(()) => {
-                                                        database::add_alert_log(&conn, product_db.id, product.value_in_cents(), get_current_time_in_ms())?;
+                                                        match database::add_alert_log(&conn, product_db.id, product.value_in_cents(), get_current_time_in_ms()) {
+                                                            Ok(_) => {}
+                                                            Err(err) => eprintln!("{}", err)
+                                                        }
                                                     },
                                                     Err(err) => {
                                                         eprintln!("{}", err)
@@ -140,7 +146,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                     product_db.threshold
                                                 )).await {
                                                 Ok(()) => {
-                                                    database::add_alert_log(&conn, product_db.id, product.value_in_cents(), get_current_time_in_ms())?;
+                                                    match database::add_alert_log(&conn, product_db.id, product.value_in_cents(), get_current_time_in_ms()) {
+                                                        Ok(_) => {}
+                                                        Err(err) => eprintln!("{}", err)
+                                                    }
                                                 },
                                                 Err(err) => {
                                                     eprintln!("{}", err)

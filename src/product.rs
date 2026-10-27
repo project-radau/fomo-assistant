@@ -1,7 +1,6 @@
 use std::fmt;
 
 pub struct Product {
-    url: String,
     name: String,
     value: f64
 }
@@ -13,9 +12,8 @@ impl std::fmt::Display for Product {
 }
 
 impl Product {
-    pub fn new(url: String, name: String, value: f64) -> Self {
+    pub fn new(name: String, value: f64) -> Self {
         Self {
-            url,
             name,
             value
         }

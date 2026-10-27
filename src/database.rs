@@ -1,3 +1,4 @@
+use anyhow::Context;
 use rusqlite::{Connection, Result, OptionalExtension};
 use std::fmt;
 
@@ -20,21 +21,13 @@ impl ProductDatabase {
     }
 }
 
-#[derive(Debug)]
-pub struct PriceEntryDatabase {
-    pub id: i32,
-    pub product_id: i32,
-    pub price: i64,
-    pub timestamp: i64
-}
-
 pub fn open_database() -> anyhow::Result<Connection> {
-    let conn = Connection::open("database.db")?;
+    let conn = Connection::open("database.db").context("could not open database")?;
 
     conn.execute(
         "PRAGMA foreign_keys = ON",
         (), // empty list of parameters.
-    )?;
+    ).context("could not enable foreign keys")?;
 
     conn.execute(
         "CREATE TABLE IF NOT EXISTS products (
@@ -43,7 +36,7 @@ pub fn open_database() -> anyhow::Result<Connection> {
             threshold FLOAT NOT NULL
         )",
         (), // empty list of parameters.
-    )?;
+    ).context("could not create products table")?;
 
     conn.execute(
         "CREATE TABLE IF NOT EXISTS price_history (
@@ -54,7 +47,7 @@ pub fn open_database() -> anyhow::Result<Connection> {
             FOREIGN KEY (product_id) REFERENCES products(id)
         )", 
         ()
-    )?;
+    ).context("could not create price_history table")?;
 
     conn.execute(
         "
@@ -66,7 +59,7 @@ pub fn open_database() -> anyhow::Result<Connection> {
             FOREIGN KEY (product_id) REFERENCES products(id)
         );", 
         ()
-    )?;
+    ).context("could not create alert_logs table")?;
 
     Ok(conn)
 }
