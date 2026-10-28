@@ -30,6 +30,15 @@ pub fn open_database() -> anyhow::Result<Connection> {
     ).context("could not enable foreign keys")?;
 
     conn.execute(
+        "
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value INTEGER NOT NULL
+        );", 
+        ()
+    ).context("could not create settings table")?;
+
+    conn.execute(
         "CREATE TABLE IF NOT EXISTS products (
             id   INTEGER PRIMARY KEY,
             url TEXT NOT NULL UNIQUE,
@@ -144,4 +153,26 @@ pub fn get_last_alert(
         |row| Ok((row.get(0)?, row.get(1)?)),
     )
     .optional()
+}
+
+pub fn get_telegram_offset(conn: &Connection) -> Result<Option<i64>, rusqlite::Error> {
+    conn.query_row(
+        "SELECT value
+         FROM settings
+         WHERE key = ?1
+         LIMIT 1",
+        ["telegram_offset"],
+        |row| Ok(row.get(0)?),
+    )
+    .optional()
+}
+
+pub fn save_telegram_offset(
+        conn: &Connection,
+        offset: i64,
+    ) -> Result<usize, rusqlite::Error> {
+    conn.execute(
+        "INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        ("telegram_offset", offset),
+    )
 }

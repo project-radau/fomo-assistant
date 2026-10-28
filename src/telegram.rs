@@ -2,6 +2,9 @@
 use std::{time::Duration};
 
 use anyhow::{Context, Result};
+use rusqlite::Connection;
+
+use crate::database;
 
 pub async fn send_message(message: &str) -> Result<()> {
     let token = std::env::var("FOMO_TELEGRAM_BOT_TOKEN")
@@ -56,23 +59,50 @@ pub async fn get_updates(offset: i64) -> Result<serde_json::Value> {
     Ok(body)
 }
 
-pub async fn run_bot() -> Result<()> {
-    let mut offset: i64 = 0;
+pub async fn run_bot(conn: &Connection) -> Result<()> {
+
+    let chat_id: i64 = std::env::var("FOMO_TELEGRAM_CHAT_ID")
+        .context("telegram chat id missing")?
+        .parse()
+        .context("telegram chat id must be a valid integer")?;
+
+    let mut offset = database::get_telegram_offset(&conn)?.unwrap_or(0);
+    
     loop {
         match get_updates(offset).await {
             Ok(result) => {
-                println!("{}", result["result"][0]["message"]["text"]);
-                match result["result"][0]["update_id"].as_i64() {
-                    Some(update_id) => {
-                        offset = update_id + 1;
+                if let Some(updates) = result["result"].as_array() {
+                    for update in updates {
+                        match update["update_id"].as_i64() {
+                            Some(update_id) => {
+                                if let Some(chat_id_json) = update["message"]["chat"]["id"].as_i64() {
+                                    if chat_id == chat_id_json {
+                                        if let Some(text) = update["message"]["text"].as_str() {
+                                            println!("{text}");
+                                        }
+                                        offset = update_id + 1;
+                                        database::save_telegram_offset(&conn, offset)?;
+                                    }
+                                    else
+                                    {
+                                        eprintln!("unknown chat id");
+                                        offset = update_id + 1;
+                                        database::save_telegram_offset(&conn, offset)?;
+                                    }
+                                }
+                                else {
+                                    eprintln!("could not read chat id")
+                                }
+                            }
+                            None => {}
+                        }
                     }
-                    None => {}
                 }
             }
             Err(err) => {
                 eprintln!("{}", err);
             }
         }
-        tokio::time::sleep(Duration::from_secs(10)).await;
+        tokio::time::sleep(Duration::from_secs(2)).await;
     }
 }
