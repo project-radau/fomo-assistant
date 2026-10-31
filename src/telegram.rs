@@ -82,6 +82,8 @@ pub async fn run_bot(conn: &Connection) -> Result<()> {
                                     if chat_id == chat_id_json {
                                         if let Some(text) = update["message"]["text"].as_str() {
                                             println!("{text}");
+
+                                            process_telegram_message(conn, text).await?;
                                         }
                                         offset = update_id + 1;
                                         database::save_telegram_offset(&conn, offset)?;
@@ -107,4 +109,28 @@ pub async fn run_bot(conn: &Connection) -> Result<()> {
             }
         }
     }
+}
+
+async fn process_telegram_message(conn: &Connection, message: &str) -> Result<()> {
+    if message.eq("/list") {
+        let current_products_db = database::get_products(&conn)?;
+        let mut message = String::new();
+        for product_db in current_products_db {
+            message.push_str(&format!(
+                "Product #{}\nURL: {}\nTarget price: {:.2}\n\n",
+                product_db.id,
+                product_db.url,
+                product_db.threshold
+            ));
+        }
+
+        if message.is_empty() {
+            send_message("current list is empty").await?;
+        }
+        else {
+            send_message(&message).await?;
+        }
+    }
+    
+    Ok(())
 }
