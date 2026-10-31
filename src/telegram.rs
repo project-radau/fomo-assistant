@@ -113,24 +113,57 @@ pub async fn run_bot(conn: &Connection) -> Result<()> {
 
 async fn process_telegram_message(conn: &Connection, message: &str) -> Result<()> {
     if message.eq("/list") {
-        let current_products_db = database::get_products(&conn)?;
-        let mut message = String::new();
-        for product_db in current_products_db {
-            message.push_str(&format!(
-                "Product #{}\nURL: {}\nTarget price: {:.2}\n\n",
-                product_db.id,
-                product_db.url,
-                product_db.threshold
-            ));
-        }
-
-        if message.is_empty() {
-            send_message("current list is empty").await?;
-        }
-        else {
-            send_message(&message).await?;
-        }
+        process_telegram_list(conn).await?;
+    }
+    else if message.starts_with("/add ") {
+        process_telegram_add(conn, message).await?;
     }
     
+    Ok(())
+}
+
+async fn process_telegram_list(conn: &Connection) -> Result<()> {
+    let current_products_db = database::get_products(&conn)?;
+    let mut message = String::new();
+    for product_db in current_products_db {
+        message.push_str(&format!(
+            "Product #{}\nURL: {}\nTarget price: {:.2}\n\n",
+            product_db.id,
+            product_db.url,
+            product_db.threshold
+        ));
+    }
+
+    if message.is_empty() {
+        send_message("current list is empty").await?;
+    }
+    else {
+        send_message(&message).await?;
+    }
+
+    Ok(())
+}
+
+async fn process_telegram_add(conn: &Connection, message: &str) -> Result<()> {
+    let message_splits: Vec<&str> = message.split_whitespace().collect();
+
+    if message_splits.len() != 3 {
+        anyhow::bail!("Invalid command format. Usage: /add URL PRICE")
+    }
+    else {
+        let url = message_splits[1];
+        let threshold = message_splits[2]
+            .parse::<f64>()
+            .context("format error: threshold has to be a number")?;
+
+        let result = database::add_product(&conn, url, threshold)?;
+        if result != 0 {
+            send_message("Product successfully added").await?;
+        }
+        else {
+            send_message("Product already exists").await?;
+        }
+    }
+
     Ok(())
 }
