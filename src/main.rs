@@ -41,7 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match args.command {
         Commands::Run => {
-            telegram::run_bot(&conn).await?;
+            telegram::run_bot(&mut conn).await?;
         },
         Commands::Add { url, threshold } =>  {
             database::add_product(&conn, &url, threshold)?;

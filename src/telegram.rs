@@ -63,7 +63,7 @@ pub async fn get_updates(offset: i64) -> Result<serde_json::Value> {
     Ok(body)
 }
 
-pub async fn run_bot(conn: &Connection) -> Result<()> {
+pub async fn run_bot(conn: &mut Connection) -> Result<()> {
 
     let chat_id: i64 = std::env::var("FOMO_TELEGRAM_CHAT_ID")
         .context("telegram chat id missing")?
@@ -82,7 +82,10 @@ pub async fn run_bot(conn: &Connection) -> Result<()> {
                                 if let Some(chat_id_json) = update["message"]["chat"]["id"].as_i64() {
                                     if chat_id == chat_id_json {
                                         if let Some(text) = update["message"]["text"].as_str() {
-                                            process_telegram_message(conn, text).await?;
+                                            if let Err(err) = process_telegram_message(conn, text).await {
+                                                eprintln!("Error processing Telegram message: {err}");
+                                                send_message("Error processing command.").await?;
+                                            }
                                         }
                                         offset = update_id + 1;
                                         database::save_telegram_offset(&conn, offset)?;
@@ -110,15 +113,18 @@ pub async fn run_bot(conn: &Connection) -> Result<()> {
     }
 }
 
-async fn process_telegram_message(conn: &Connection, message: &str) -> Result<()> {
+async fn process_telegram_message(conn: &mut Connection, message: &str) -> Result<()> {
     if message.eq("/list") {
-        process_telegram_list(conn).await?;
+        process_telegram_list(&conn).await?;
     }
     else if message.starts_with("/add ") {
-        process_telegram_add(conn, message).await?;
+        process_telegram_add(&conn, message).await?;
+    }
+    else if message.starts_with("/remove ") {
+        process_telegram_remove(conn, message).await?;
     }
     else if message.eq("/check") {
-        process_telegram_check(conn).await?;
+        process_telegram_check(&conn).await?;
     }
     else {
         send_message("command not found").await?;
@@ -157,9 +163,14 @@ async fn process_telegram_add(conn: &Connection, message: &str) -> Result<()> {
     }
     else {
         let url = message_splits[1];
-        let threshold = message_splits[2]
-            .parse::<f64>()
-            .context("format error: threshold has to be a number")?;
+        let threshold = match message_splits[2]
+            .parse::<f64>() {
+                Ok(id) => id,
+                Err(_) => {
+                    send_message("Invalid threshold. Has to be a number").await?;
+                    return Ok(());
+                }
+            };
 
         let result = database::add_product(&conn, url, threshold)?;
         if result != 0 {
@@ -167,6 +178,33 @@ async fn process_telegram_add(conn: &Connection, message: &str) -> Result<()> {
         }
         else {
             send_message("Product already exists").await?;
+        }
+    }
+
+    Ok(())
+}
+
+async fn process_telegram_remove(conn: &mut Connection, message: &str) -> Result<()> {
+    let message_splits: Vec<&str> = message.split_whitespace().collect();
+
+    if message_splits.len() != 2 {
+        anyhow::bail!("Invalid command format. Usage: /remove ID")
+    }
+    else {
+        let id = match message_splits[1].parse::<i32>() {
+            Ok(id) => id,
+            Err(_) => {
+                send_message("Invalid ID. Has to be a number").await?;
+                return Ok(());
+            }
+        };
+
+        let result = database::remove_product(conn, id)?;
+        if result != 0 {
+            send_message("Product successfully removed").await?;
+        }
+        else {
+            send_message("Product not removed").await?;
         }
     }
 
