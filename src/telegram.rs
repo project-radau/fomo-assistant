@@ -1,10 +1,11 @@
 
 use std::{time::Duration};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use rusqlite::Connection;
 
-use crate::database;
+use crate::{database, price_tracker::{self, CheckStatus}};
 
 pub async fn send_message(message: &str) -> Result<()> {
     let token = std::env::var("FOMO_TELEGRAM_BOT_TOKEN")
@@ -81,8 +82,6 @@ pub async fn run_bot(conn: &Connection) -> Result<()> {
                                 if let Some(chat_id_json) = update["message"]["chat"]["id"].as_i64() {
                                     if chat_id == chat_id_json {
                                         if let Some(text) = update["message"]["text"].as_str() {
-                                            println!("{text}");
-
                                             process_telegram_message(conn, text).await?;
                                         }
                                         offset = update_id + 1;
@@ -117,6 +116,12 @@ async fn process_telegram_message(conn: &Connection, message: &str) -> Result<()
     }
     else if message.starts_with("/add ") {
         process_telegram_add(conn, message).await?;
+    }
+    else if message.eq("/check") {
+        process_telegram_check(conn).await?;
+    }
+    else {
+        send_message("command not found").await?;
     }
     
     Ok(())
@@ -166,4 +171,80 @@ async fn process_telegram_add(conn: &Connection, message: &str) -> Result<()> {
     }
 
     Ok(())
+}
+
+async fn process_telegram_check(conn: &Connection) -> Result<()> {
+    let results = price_tracker::check_products(conn).await?;
+
+    let mut message = String::new();
+
+    for result in results {
+        let should_send_alert = result.alert_due
+            && matches!(&result.status, CheckStatus::Buy);
+
+        let status_text = match result.status {
+            CheckStatus::Buy => "BUY",
+            CheckStatus::Wait => "WAIT",
+            CheckStatus::Error => "ERROR",
+        };
+
+        let current_price = match result.current_price {
+                Some(price) => format!("{price:.2}"),
+                None => "-".to_string(),
+            };
+
+        message.push_str(&format!(
+            "Product: {}\nCurrent Price: {}\nTarget price: {:.2}\nStatus: {}\n\n",
+            &result.product_name,
+            &current_price,
+            &result.target_price,
+            &status_text
+        ));
+
+        if should_send_alert {
+
+            if let Some(price) = result.current_price {
+                let message = format!(
+                    "Price alert!\n{}\nCurrent price: {:.2}\nTarget price: {:.2}",
+                    result.product_name,
+                    price,
+                    result.target_price
+                );
+
+                send_message(&message).await?;
+
+                database::add_alert_log(
+                    &conn,
+                    result.product_id,
+                    (price * 100.0) as i64,
+                    get_current_time_in_ms(),
+                )?;
+            }
+            
+        }
+    }
+
+    if message.is_empty() {
+        send_message("current list is empty").await?;
+    }
+    else {
+        send_message(&message).await?;
+    }
+
+    Ok(())
+}
+
+// Source - https://stackoverflow.com/a/44378174
+// Posted by Shepmaster, modified by community. See post 'Timeline' for change history
+// Retrieved 2026-10-10, License - CC BY-SA 4.0
+fn get_current_time_in_ms() -> i64 {
+    let start = SystemTime::now();
+    let since_the_epoch = start
+        .duration_since(UNIX_EPOCH)
+        .expect("time should go forward");
+
+    let in_ms = since_the_epoch.as_secs() * 1000 +
+    since_the_epoch.subsec_nanos() as u64 / 1_000_000;
+
+    in_ms as i64
 }

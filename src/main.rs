@@ -3,10 +3,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use clap::{Parser, Subcommand};
 use comfy_table::*;
 
+use crate::price_tracker::CheckStatus;
+
 mod scraper;
 mod product;
 mod database;
 mod telegram;
+mod price_tracker;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -101,87 +104,53 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("{table}");
         },
         Commands::Check => {
-            let current_products_db = database::get_products(&conn)?;
+            let results = price_tracker::check_products(&conn).await?;
 
             table
                 .set_header(vec!["Product", "Current Price", "Target Price", "Status"]);
 
-            for product_db in current_products_db {
-                match scraper::scrape_product(&product_db.url).await {
-                    Ok(product) => {
-                        match database::add_price_entry(&conn, product_db.id, product.value_in_cents(), get_current_time_in_ms()) {
-                            Ok(_) => {}
-                            Err(err) => eprintln!("{}", err)
-                        }
+            for result in results {
+                let should_send_alert = result.alert_due
+                    && matches!(&result.status, CheckStatus::Buy);
 
-                        let mut status = Cell::new("WAIT").fg(Color::Yellow);
+                let (status_text, status_color) = match result.status {
+                    CheckStatus::Buy => ("BUY", Color::Green),
+                    CheckStatus::Wait => ("WAIT", Color::Yellow),
+                    CheckStatus::Error => ("ERROR", Color::Red),
+                };
 
-                        if product.value_in_cents() <= product_db.threshold_in_cents() {
-                            status = Cell::new("BUY").fg(Color::Green);
+                let current_price = match result.current_price {
+                    Some(price) => format!("{price:.2}"),
+                    None => "-".to_string(),
+                };
 
-                            match database::get_last_alert(&conn, product_db.id) {
-                                Ok(result_last_alert) => {
-                                    match result_last_alert {
-                                        Some(last_alert) => {
-                                            if last_alert.0 > product.value_in_cents() || get_current_time_in_ms() - last_alert.1 > (1000 * 60 * 60 * 24 * 7) {
-                                                match telegram::send_message(&format!(
-                                                    "{}\nAktueller Preis: {:.2}\nZielpreis: {:.2}",
-                                                    product.name(),
-                                                    product.value(),
-                                                    product_db.threshold
-                                                )).await {
-                                                    Ok(()) => {
-                                                        match database::add_alert_log(&conn, product_db.id, product.value_in_cents(), get_current_time_in_ms()) {
-                                                            Ok(_) => {}
-                                                            Err(err) => eprintln!("{}", err)
-                                                        }
-                                                    },
-                                                    Err(err) => {
-                                                        eprintln!("{}", err)
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        None => {
-                                            match telegram::send_message(&format!(
-                                                    "{}\nAktueller Preis: {:.2}\nZielpreis: {:.2}",
-                                                    product.name(),
-                                                    product.value(),
-                                                    product_db.threshold
-                                                )).await {
-                                                Ok(()) => {
-                                                    match database::add_alert_log(&conn, product_db.id, product.value_in_cents(), get_current_time_in_ms()) {
-                                                        Ok(_) => {}
-                                                        Err(err) => eprintln!("{}", err)
-                                                    }
-                                                },
-                                                Err(err) => {
-                                                    eprintln!("{}", err)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                Err(err) => {
-                                    eprintln!("{}", err);
-                                }
-                            }
-                        }
+                table.add_row(vec![
+                    Cell::new(&result.product_name),
+                    Cell::new(&current_price),
+                    Cell::new(&format!("{:.2}", result.target_price)),
+                    Cell::new(status_text).fg(status_color),
+                ]);
 
-                        table.add_row(vec![
-                            Cell::new(product.name()), 
-                            Cell::new(&format!("{:.2}", product.value())), 
-                            Cell::new(&format!("{:.2}", product_db.threshold)), 
-                            status]);
+                if should_send_alert {
+
+                    if let Some(price) = result.current_price {
+                        let message = format!(
+                            "Price alert!\n{}\nCurrent price: {:.2}\nTarget price: {:.2}",
+                            result.product_name,
+                            price,
+                            result.target_price
+                        );
+
+                        telegram::send_message(&message).await?;
+
+                        database::add_alert_log(
+                            &conn,
+                            result.product_id,
+                            (price * 100.0) as i64,
+                            get_current_time_in_ms(),
+                        )?;
                     }
-                    Err(err) => {
-                        eprintln!("{}", err);
-                        table.add_row(vec![
-                            Cell::new(product_db.url), 
-                            Cell::new("-"), 
-                            Cell::new(&format!("{:.2}", product_db.threshold)), 
-                            Cell::new("ERROR").fg(Color::Red)]);
-                    }
+                    
                 }
             }
 
