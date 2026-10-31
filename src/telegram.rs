@@ -42,9 +42,12 @@ pub async fn get_updates(offset: i64) -> Result<serde_json::Value> {
 
     let url = format!("https://api.telegram.org/bot{token}/getUpdates");
 
-    let response = reqwest::Client::new()
+    let response = reqwest::Client::builder()
+        .timeout(Duration::from_secs(35))
+        .build()
+        .context("could not build client")?
         .get(url)
-        .query(&[("offset", offset)])
+        .query(&[("offset", offset), ("timeout", 30)])
         .send()
         .await
         .context("telegram updates could not execute")?;
@@ -103,6 +106,5 @@ pub async fn run_bot(conn: &Connection) -> Result<()> {
                 eprintln!("{}", err);
             }
         }
-        tokio::time::sleep(Duration::from_secs(2)).await;
     }
 }
