@@ -37,6 +37,38 @@ pub async fn send_message(message: &str) -> Result<()> {
     Ok(())
 }
 
+pub async fn send_rich_message(message: &str) -> Result<()> {
+    let token = std::env::var("FOMO_TELEGRAM_BOT_TOKEN")
+        .context("telegram bot token missing")?;
+
+    let chat_id = std::env::var("FOMO_TELEGRAM_CHAT_ID")
+        .context("telegram chat id missing")?;
+
+    let url = format!("https://api.telegram.org/bot{token}/sendRichMessage");
+
+    let response = reqwest::Client::new()
+        .post(url)
+        .json(&serde_json::json!({
+            "chat_id": chat_id,
+            "rich_message": {
+                "markdown": message
+            }
+        }))
+        .send()
+        .await
+        .context("telegram request failed")?;
+
+    let response = response.error_for_status()?;
+
+    let body: serde_json::Value = response.json().await?;
+
+    if body["ok"] != true {
+        anyhow::bail!("telegram couldnt send message: {body}");
+    }
+
+    Ok(())
+}
+
 pub async fn get_updates(offset: i64) -> Result<serde_json::Value> {
     let token = std::env::var("FOMO_TELEGRAM_BOT_TOKEN")
         .context("telegram bot token missing")?;
@@ -134,23 +166,28 @@ async fn process_telegram_message(conn: &mut Connection, message: &str) -> Resul
 }
 
 async fn process_telegram_list(conn: &Connection) -> Result<()> {
-    let current_products_db = database::get_products(&conn)?;
-    let mut message = String::new();
-    for product_db in current_products_db {
+    let products = database::get_products(conn)?;
+
+    if products.is_empty() {
+        send_message("Current list is empty.").await?;
+        return Ok(());
+    }
+
+    let mut message = String::from(
+        "| ID | Product | Target Price |\n\
+         |---:|---|---:|\n"
+    );
+
+    for product in products {
         message.push_str(&format!(
-            "Product #{}\nURL: {}\nTarget price: {:.2}\n\n",
-            product_db.id,
-            product_db.url,
-            product_db.threshold
+            "| {} | {} | {:.2} |\n",
+            product.id,
+            product.url,
+            product.threshold
         ));
     }
 
-    if message.is_empty() {
-        send_message("current list is empty").await?;
-    }
-    else {
-        send_message(&message).await?;
-    }
+    send_rich_message(&message).await?;
 
     Ok(())
 }
@@ -214,7 +251,15 @@ async fn process_telegram_remove(conn: &mut Connection, message: &str) -> Result
 async fn process_telegram_check(conn: &Connection) -> Result<()> {
     let results = price_tracker::check_products(conn).await?;
 
-    let mut message = String::new();
+    if results.is_empty() {
+        send_message("Your product list is empty.").await?;
+        return Ok(());
+    }
+
+    let mut message = String::from(
+        "| Product | Current Price | Target Price | Status |\n\
+         |---|---:|---:|---|\n"
+    );
 
     for result in results {
         let should_send_alert = result.alert_due
@@ -231,12 +276,18 @@ async fn process_telegram_check(conn: &Connection) -> Result<()> {
                 None => "-".to_string(),
             };
 
+        let product_name = if result.product_name.chars().count() > 25 {
+            format!("{}...", result.product_name.chars().take(22).collect::<String>())
+        } else {
+            result.product_name.clone()
+        };
+
         message.push_str(&format!(
-            "Product: {}\nCurrent Price: {}\nTarget price: {:.2}\nStatus: {}\n\n",
-            &result.product_name,
-            &current_price,
-            &result.target_price,
-            &status_text
+            "| {} | {} | {:.2} | {} |\n",
+            product_name,
+            current_price,
+            result.target_price,
+            status_text
         ));
 
         if should_send_alert {
@@ -262,12 +313,7 @@ async fn process_telegram_check(conn: &Connection) -> Result<()> {
         }
     }
 
-    if message.is_empty() {
-        send_message("current list is empty").await?;
-    }
-    else {
-        send_message(&message).await?;
-    }
+    send_rich_message(&message).await?;
 
     Ok(())
 }
