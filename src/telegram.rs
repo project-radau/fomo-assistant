@@ -158,15 +158,18 @@ async fn process_telegram_message(conn: &mut Connection, message: &str) -> Resul
     match command {
         "/list" if message_splits.len() == 1 => {
             process_telegram_list(conn).await?;
-        }
+        },
         "/check" if message_splits.len() == 1 => {
             process_telegram_check(conn).await?;
-        }
+        },
         "/add" => {
             process_telegram_add(conn, message).await?;
-        }
+        },
         "/remove" => {
             process_telegram_remove(conn, message).await?;
+        },
+        "/help" => {
+            process_telegram_help().await?;
         }
         _ => {
             send_message("command not found").await?;
@@ -337,6 +340,18 @@ async fn process_telegram_check(conn: &Connection) -> Result<()> {
     }
 
     send_rich_message(&message).await?;
+
+    Ok(())
+}
+
+async fn process_telegram_help() -> Result<()> {
+    let message = "Available commands:\n\n\
+        /add URL THRESHOLD - Add a product\n\
+        /remove ID - Remove a product\n\
+        /list - Show all products\n\
+        /check - Check current prices";
+
+    send_message(message).await?;
 
     Ok(())
 }
