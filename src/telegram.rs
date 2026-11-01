@@ -103,6 +103,8 @@ pub async fn run_bot(conn: &mut Connection) -> Result<()> {
         .context("telegram chat id must be a valid integer")?;
 
     let mut offset = database::get_telegram_offset(&conn)?.unwrap_or(0);
+
+    set_bot_commands().await?;
     
     loop {
         match get_updates(offset).await {
@@ -145,6 +147,55 @@ pub async fn run_bot(conn: &mut Connection) -> Result<()> {
     }
 }
 
+async fn set_bot_commands() -> Result<serde_json::Value> {
+    let token = std::env::var("FOMO_TELEGRAM_BOT_TOKEN")
+        .context("telegram bot token missing")?;
+
+    let url = format!("https://api.telegram.org/bot{token}/setMyCommands");
+
+    let commands = serde_json::json!([
+        {
+            "command": "add",
+            "description": "Add a product with URL and target price"
+        },
+        {
+            "command": "remove",
+            "description": "Remove a product by ID"
+        },
+        {
+            "command": "list",
+            "description": "Show all tracked products"
+        },
+        {
+            "command": "check",
+            "description": "Check current prices"
+        },
+        {
+            "command": "help",
+            "description": "Show available commands"
+        }
+    ]);
+
+    let response = reqwest::Client::new()
+        .post(url)
+        .json(&serde_json::json!({
+            "commands": commands
+        }))
+        .send()
+        .await
+        .context("telegram request failed")?;
+
+    let response = response.error_for_status()?;
+
+    let body: serde_json::Value = response.json().await?;
+
+    if body["ok"] != true {
+        anyhow::bail!("telegram couldnt set commands: {body}");
+    }
+
+    Ok(body)
+}
+
 async fn process_telegram_message(conn: &mut Connection, message: &str) -> Result<()> {
     let message_splits: Vec<&str> = message.split_whitespace().collect();
     
@@ -168,7 +219,7 @@ async fn process_telegram_message(conn: &mut Connection, message: &str) -> Resul
         "/remove" => {
             process_telegram_remove(conn, message).await?;
         },
-        "/help" => {
+        "/help" if message_splits.len() == 1 => {
             process_telegram_help().await?;
         }
         _ => {
@@ -356,6 +407,7 @@ async fn process_telegram_help() -> Result<()> {
     Ok(())
 }
 
+// TODO: add check for our valid urls
 fn validate_url(url: &str) -> bool {
     url.starts_with("http://") || url.starts_with("https://")
 }
