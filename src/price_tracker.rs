@@ -39,21 +39,15 @@ pub async fn check_products(conn: &Connection) -> Result<Vec<CheckResult>> {
                     CheckStatus::Wait
                 };
 
-                let mut alert_due = false;
-
-                if let CheckStatus::Buy = status {
-                    match database::get_last_alert(&conn, product_db.id)? {
-                        Some(last_alert) => {
-                            let price_decreased = product.value_in_cents() < last_alert.0;
-                            let seven_days_passed = get_current_time_in_ms() - last_alert.1 > 7 * 24 * 60 * 60 * 1000;
-
-                            alert_due = price_decreased || seven_days_passed;
-                        }
-                        None => {
-                            alert_due = true;
-                        }
-                    }
-                }
+                let alert_due = if let CheckStatus::Buy = status {
+                    is_alert_due(
+                        product.value_in_cents(),
+                        database::get_last_alert(conn, product_db.id)?,
+                        get_current_time_in_ms(),
+                    )
+                } else {
+                    false
+                };
 
                 results.push(CheckResult {
                     product_name: product.name().to_string(),
@@ -79,6 +73,83 @@ pub async fn check_products(conn: &Connection) -> Result<Vec<CheckResult>> {
     }
 
     Ok(results)
+}
+
+fn is_alert_due(
+    current_price: i64,
+    last_alert: Option<(i64, i64)>,
+    now: i64,
+) -> bool {
+    if let Some(values) = last_alert {
+        let price_decreased = current_price < values.0;
+        let seven_days_passed = now - values.1 > 7 * 24 * 60 * 60 * 1000;
+
+        if price_decreased || seven_days_passed {
+            return true;
+        }
+    }
+    else {
+        return true;
+    }
+
+    // Sonst keinen Alarm senden.
+    false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_alert_due_without_previous_alert() {
+        let result = is_alert_due(10000, None, 1000000);
+
+        assert!(result);
+    }
+
+    #[test]
+    fn test_alert_due_price_lower() {
+        let result = is_alert_due(
+            10000,
+            Some((12000, 1000000)),
+            1000000 + 86400000,
+        );
+
+        assert!(result);
+    }
+
+    #[test]
+    fn test_alert_due_price_not_lower_and_last_alert_less_than_a_week() {
+        let result = is_alert_due(
+            10000,
+            Some((10000, 1000000)),
+            1000000 + 86400000,
+        );
+
+        assert!(!result);
+    }
+
+    #[test]
+    fn test_alert_due_price_not_lower_and_last_alert_more_than_a_week() {
+        let result = is_alert_due(
+            10000,
+            Some((10000, 1000000)),
+            1000000 + 8 * 86400000,
+        );
+
+        assert!(result);
+    }
+
+    #[test]
+    fn test_alert_due_price_not_lower_and_last_alert_exactly_a_week() {
+        let result = is_alert_due(
+            10000,
+            Some((10000, 1000000)),
+            1000000 + 7 * 86400000,
+        );
+
+        assert!(!result);
+    }
 }
 
 // Source - https://stackoverflow.com/a/44378174
