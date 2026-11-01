@@ -266,10 +266,13 @@ async fn process_telegram_add(conn: &Connection, message: &str) -> Result<()> {
     else {
         let url = message_splits[1];
 
-        if !validate_url(url) {
-            send_message("Invalid url. Please enter a valid url").await?;
-            return Ok(());
-        }
+        let parsed_url = match validate_url(url) {
+            Ok(parsed_url) => parsed_url,
+            Err(_) => {
+                send_message("Invalid url. Please enter a valid url").await?;
+                return Ok(());
+            }
+        };
 
         let threshold = match message_splits[2]
             .parse::<f64>() {
@@ -286,7 +289,7 @@ async fn process_telegram_add(conn: &Connection, message: &str) -> Result<()> {
                 }
             };
 
-        let result = database::add_product(&conn, url, threshold)?;
+        let result = database::add_product(&conn, parsed_url.as_str(), threshold)?;
         if result != 0 {
             send_message("Product successfully added").await?;
         }
@@ -408,8 +411,14 @@ async fn process_telegram_help() -> Result<()> {
 }
 
 // TODO: add check for our valid urls
-fn validate_url(url: &str) -> bool {
-    url.starts_with("http://") || url.starts_with("https://")
+fn validate_url(url: &str) -> Result<url::Url, url::ParseError> {
+    let normalized_url = if url.starts_with("http://") || url.starts_with("https://") {
+        url.to_string()
+    } else {
+        format!("https://{}", url)
+    };
+
+    url::Url::parse(&normalized_url)
 }
 
 // Source - https://stackoverflow.com/a/44378174

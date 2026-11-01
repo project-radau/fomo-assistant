@@ -24,6 +24,12 @@ impl ProductDatabase {
 pub fn open_database() -> anyhow::Result<Connection> {
     let conn = Connection::open("database.db").context("could not open database")?;
 
+    initialize_database(&conn)?;
+
+    Ok(conn)
+}
+
+pub fn initialize_database(conn: &Connection) -> anyhow::Result<()> {
     conn.execute(
         "PRAGMA foreign_keys = ON",
         (), // empty list of parameters.
@@ -70,7 +76,35 @@ pub fn open_database() -> anyhow::Result<Connection> {
         ()
     ).context("could not create alert_logs table")?;
 
-    Ok(conn)
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_database_initialize() -> anyhow::Result<()> {
+        let conn = Connection::open_in_memory()
+            .context("could not open database")?;
+
+        initialize_database(&conn)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_database_add_product() -> anyhow::Result<()> {
+        let conn = Connection::open_in_memory()
+            .context("could not open database")?;
+
+        initialize_database(&conn)?;
+
+        assert_eq!(add_product(&conn, "abc", 500.0)?, 1);
+        assert_eq!(add_product(&conn, "abc", 300.0)?, 0);
+
+        Ok(())
+    }
 }
 
 pub fn get_products(conn: &Connection) -> Result<Vec<ProductDatabase>, rusqlite::Error> {
