@@ -146,22 +146,33 @@ pub async fn run_bot(conn: &mut Connection) -> Result<()> {
 }
 
 async fn process_telegram_message(conn: &mut Connection, message: &str) -> Result<()> {
-    if message.eq("/list") {
-        process_telegram_list(&conn).await?;
-    }
-    else if message.starts_with("/add ") {
-        process_telegram_add(&conn, message).await?;
-    }
-    else if message.starts_with("/remove ") {
-        process_telegram_remove(conn, message).await?;
-    }
-    else if message.eq("/check") {
-        process_telegram_check(&conn).await?;
-    }
-    else {
-        send_message("command not found").await?;
-    }
+    let message_splits: Vec<&str> = message.split_whitespace().collect();
     
+    if message_splits.is_empty() {
+        send_message("command not found").await?;
+        return Ok(());
+    }
+
+    let command = message_splits[0];
+
+    match command {
+        "/list" if message_splits.len() == 1 => {
+            process_telegram_list(conn).await?;
+        }
+        "/check" if message_splits.len() == 1 => {
+            process_telegram_check(conn).await?;
+        }
+        "/add" => {
+            process_telegram_add(conn, message).await?;
+        }
+        "/remove" => {
+            process_telegram_remove(conn, message).await?;
+        }
+        _ => {
+            send_message("command not found").await?;
+        }
+    }
+
     Ok(())
 }
 
@@ -200,11 +211,23 @@ async fn process_telegram_add(conn: &Connection, message: &str) -> Result<()> {
     }
     else {
         let url = message_splits[1];
+
+        if !validate_url(url) {
+            send_message("Invalid url. Please enter a valid url").await?;
+            return Ok(());
+        }
+
         let threshold = match message_splits[2]
             .parse::<f64>() {
-                Ok(id) => id,
+                Ok(id) => {
+                    if !id.is_finite() || id <= 0.0 {
+                        send_message("Invalid threshold. Please enter a finite number greater than 0.").await?;
+                        return Ok(());
+                    }
+                    id
+                },
                 Err(_) => {
-                    send_message("Invalid threshold. Has to be a number").await?;
+                    send_message("Invalid threshold. Please enter a finite number greater than 0.").await?;
                     return Ok(());
                 }
             };
@@ -241,7 +264,7 @@ async fn process_telegram_remove(conn: &mut Connection, message: &str) -> Result
             send_message("Product successfully removed").await?;
         }
         else {
-            send_message("Product not removed").await?;
+            send_message("Product not found").await?;
         }
     }
 
@@ -316,6 +339,10 @@ async fn process_telegram_check(conn: &Connection) -> Result<()> {
     send_rich_message(&message).await?;
 
     Ok(())
+}
+
+fn validate_url(url: &str) -> bool {
+    url.starts_with("http://") || url.starts_with("https://")
 }
 
 // Source - https://stackoverflow.com/a/44378174
