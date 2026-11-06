@@ -411,14 +411,19 @@ async fn process_telegram_help() -> Result<()> {
 }
 
 // TODO: add check for our valid urls
-fn validate_url(url: &str) -> Result<url::Url, url::ParseError> {
+fn validate_url(url: &str) -> anyhow::Result<url::Url> {
     let normalized_url = if url.starts_with("http://") || url.starts_with("https://") {
         url.to_string()
     } else {
+        if url.contains("://") {
+            anyhow::bail!("Only http and https URLs are supported");
+        }
         format!("https://{}", url)
     };
 
-    url::Url::parse(&normalized_url)
+    let parsed_url = url::Url::parse(&normalized_url)?;
+    
+    Ok(parsed_url)
 }
 
 // Source - https://stackoverflow.com/a/44378174
@@ -434,4 +439,37 @@ fn get_current_time_in_ms() -> i64 {
     since_the_epoch.subsec_nanos() as u64 / 1_000_000;
 
     in_ms as i64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_telegram_validate_url_https() {
+        assert!(validate_url("https://example.com").is_ok());
+    }
+
+    #[test]
+    fn test_telegram_validate_url_http() {
+        assert!(validate_url("http://example.com/product").is_ok());
+    }
+
+    #[test]
+    fn test_telegram_validate_url_without_prefix() {
+        let result = validate_url("amazon.it/product").unwrap();
+
+        assert_eq!(result.scheme(), "https");
+        assert_eq!(result.host_str(), Some("amazon.it"));
+    }
+
+    #[test]
+    fn test_telegram_validate_url_ftp() {
+        assert!(validate_url("ftp://example.com").is_err());
+    }
+
+    #[test]
+    fn test_telegram_validate_url_empty() {
+        assert!(validate_url("https://").is_err());
+    }
 }
