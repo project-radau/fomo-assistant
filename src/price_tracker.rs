@@ -1,6 +1,7 @@
 use anyhow::Result;
 use rusqlite::Connection;
 use std::time::{SystemTime, UNIX_EPOCH};
+use chrono::{Local, Timelike, Duration as ChronoDuration};
 
 use crate::database;
 use crate::scraper;
@@ -73,6 +74,44 @@ pub async fn check_products(conn: &Connection) -> Result<Vec<CheckResult>> {
     }
 
     Ok(results)
+}
+
+pub async fn run_automatic_checks() -> Result<()> {
+    let conn = database::open_database()?;
+
+    loop {
+        match check_products(&conn).await {
+            Ok(results) => {
+                if let Err(error) =
+                    crate::telegram::send_price_alerts(&conn, &results).await
+                {
+                    eprintln!("Error sending automatic check results: {error}");
+                }
+            }
+            Err(error) => {
+                eprintln!("Automatic price check failed: {error}");
+            }
+        }
+
+        let now = Local::now();
+
+        // 2 minutes after full hour
+        let mut next_check = now
+            .with_minute(2)
+            .unwrap()
+            .with_second(0)
+            .unwrap()
+            .with_nanosecond(0)
+            .unwrap();
+
+        if next_check <= now {
+            next_check += ChronoDuration::hours(1);
+        }
+
+        let wait_duration = (next_check - Local::now()).to_std()?;
+
+        tokio::time::sleep(wait_duration).await;
+    }
 }
 
 fn is_alert_due(

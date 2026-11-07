@@ -336,15 +336,14 @@ async fn process_telegram_check(conn: &Connection) -> Result<()> {
         return Ok(());
     }
 
+    send_price_alerts(conn, &results).await?;
+
     let mut message = String::from(
         "| Product | Current Price | Target Price | Status |\n\
          |---|---:|---:|---|\n"
     );
 
     for result in results {
-        let should_send_alert = result.alert_due
-            && matches!(&result.status, CheckStatus::Buy);
-
         let status_text = match result.status {
             CheckStatus::Buy => "BUY",
             CheckStatus::Wait => "WAIT",
@@ -369,31 +368,41 @@ async fn process_telegram_check(conn: &Connection) -> Result<()> {
             result.target_price,
             status_text
         ));
+    }
+
+    send_rich_message(&message).await?;
+
+    Ok(())
+}
+
+pub async fn send_price_alerts(
+    conn: &Connection,
+    results: &[price_tracker::CheckResult],
+) -> Result<()> {
+    for result in results {
+        let should_send_alert = result.alert_due
+            && matches!(&result.status, CheckStatus::Buy);
 
         if should_send_alert {
-
             if let Some(price) = result.current_price {
-                let message = format!(
+                let alert_message = format!(
                     "Price alert!\n{}\nCurrent price: {:.2}\nTarget price: {:.2}",
                     result.product_name,
                     price,
                     result.target_price
                 );
 
-                send_message(&message).await?;
+                send_message(&alert_message).await?;
 
                 database::add_alert_log(
-                    &conn,
+                    conn,
                     result.product_id,
                     (price * 100.0) as i64,
                     get_current_time_in_ms(),
                 )?;
             }
-            
         }
     }
-
-    send_rich_message(&message).await?;
 
     Ok(())
 }
