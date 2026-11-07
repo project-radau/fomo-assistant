@@ -34,7 +34,10 @@ enum Commands {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::TRACE)
+        .with_writer(std::io::stderr)
+        .init();
 
     tracing::info!("TEST: logging initialized");
 
