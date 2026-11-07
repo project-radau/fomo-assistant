@@ -36,6 +36,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
     tracing_subscriber::fmt::init();
 
+    tracing::info!("TEST: logging initialized");
+
     let mut conn = database::open_database()?;
 
     database::create_backup(&conn)?;
