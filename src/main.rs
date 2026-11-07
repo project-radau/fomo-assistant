@@ -37,6 +37,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
     let mut conn = database::open_database()?;
+
+    database::create_backup(&conn)?;
+
     let mut table = Table::new();
     let args = Cli::parse();
 
@@ -49,6 +52,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     result?;
                 }
                 result = price_tracker::run_automatic_checks() => {
+                    result?;
+                }
+                result = database::run_backup_scheduler() => {
                     result?;
                 }
             }

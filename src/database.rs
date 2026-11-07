@@ -1,5 +1,7 @@
 use anyhow::Context;
 use rusqlite::{Connection, Result, OptionalExtension};
+use rusqlite::backup::Backup;
+use chrono::{Local, Timelike};
 use std::fmt;
 
 #[derive(Debug)]
@@ -77,34 +79,6 @@ pub fn initialize_database(conn: &Connection) -> anyhow::Result<()> {
     ).context("could not create alert_logs table")?;
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_database_initialize() -> anyhow::Result<()> {
-        let conn = Connection::open_in_memory()
-            .context("could not open database")?;
-
-        initialize_database(&conn)?;
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_database_add_product() -> anyhow::Result<()> {
-        let conn = Connection::open_in_memory()
-            .context("could not open database")?;
-
-        initialize_database(&conn)?;
-
-        assert_eq!(add_product(&conn, "abc", 500.0)?, 1);
-        assert_eq!(add_product(&conn, "abc", 300.0)?, 0);
-
-        Ok(())
-    }
 }
 
 pub fn get_products(conn: &Connection) -> Result<Vec<ProductDatabase>, rusqlite::Error> {
@@ -209,4 +183,147 @@ pub fn save_telegram_offset(
         "INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
         ("telegram_offset", offset),
     )
+}
+
+pub fn create_backup(conn: &Connection) -> anyhow::Result<()> {
+    std::fs::create_dir_all("backups")?;
+
+    let timestamp = Local::now().format("%Y-%m-%d_%H-%M-%S");
+    let backup_path = format!("backups/backup_{timestamp}.db");
+
+    let mut destination = Connection::open(&backup_path)?;
+
+    let backup = Backup::new(conn, &mut destination)?;
+
+    backup.run_to_completion(5, std::time::Duration::from_millis(100), None)?;
+
+    cleanup_backups()?;
+
+    Ok(())
+}
+
+pub async fn run_backup_scheduler() -> anyhow::Result<()> {
+    let conn = open_database()?;
+
+    loop {
+        let now = Local::now();
+
+        let mut next_backup = now
+            .with_hour(3)
+            .unwrap()
+            .with_minute(0)
+            .unwrap()
+            .with_second(0)
+            .unwrap()
+            .with_nanosecond(0)
+            .unwrap();
+
+        if next_backup <= now {
+            next_backup += chrono::Duration::days(1);
+        }
+
+        let wait_duration = (next_backup - now).to_std()?;
+
+        tracing::info!(
+            "Next database backup scheduled for {}",
+            next_backup.format("%Y-%m-%d %H:%M:%S")
+        );
+
+        tokio::time::sleep(wait_duration).await;
+
+        tracing::info!("Starting scheduled database backup");
+
+        match create_backup(&conn) {
+            Ok(()) => {
+                tracing::info!("Scheduled database backup completed");
+            }
+            Err(error) => {
+                tracing::error!("Scheduled database backup failed: {error:#}");
+            }
+        }
+    }
+}
+
+fn list_backups() -> anyhow::Result<Vec<std::path::PathBuf>> {
+    let mut backups = Vec::new();
+
+    for entry in std::fs::read_dir("backups")? {
+        let path = entry?.path();
+
+        if path.extension().is_some_and(|ext| ext == "db") {
+            backups.push(path);
+        }
+    }
+
+    backups.sort();
+
+    Ok(backups)
+}
+
+fn backup_age_days(path: &std::path::Path) -> anyhow::Result<i64> {
+    let filename = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| anyhow::anyhow!("Invalid backup filename"))?;
+
+    let date = filename
+        .strip_prefix("backup_")
+        .and_then(|name| name.get(..10))
+        .ok_or_else(|| anyhow::anyhow!("Invalid backup filename"))?;
+
+    let backup_date = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")?;
+    let today = Local::now().date_naive();
+
+    Ok((today - backup_date).num_days())
+}
+
+fn should_keep_backup(age_days: i64) -> bool {
+    age_days <= 3
+        || age_days % 7 == 0 && age_days <= 28
+        || age_days % 30 == 0 && age_days <= 180
+}
+
+fn cleanup_backups() -> anyhow::Result<()> {
+    for path in list_backups()? {
+        let age = backup_age_days(&path)?;
+
+        if !should_keep_backup(age) {
+            std::fs::remove_file(&path)?;
+
+            tracing::info!(
+                "Deleted old database backup: {}",
+                path.display()
+            );
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_database_initialize() -> anyhow::Result<()> {
+        let conn = Connection::open_in_memory()
+            .context("could not open database")?;
+
+        initialize_database(&conn)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_database_add_product() -> anyhow::Result<()> {
+        let conn = Connection::open_in_memory()
+            .context("could not open database")?;
+
+        initialize_database(&conn)?;
+
+        assert_eq!(add_product(&conn, "abc", 500.0)?, 1);
+        assert_eq!(add_product(&conn, "abc", 300.0)?, 0);
+
+        Ok(())
+    }
 }
