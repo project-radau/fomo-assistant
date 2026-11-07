@@ -33,6 +33,7 @@ enum Commands {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tracing_subscriber::fmt::init();
     dotenvy::dotenv().ok();
 
     let mut conn = database::open_database()?;
@@ -87,7 +88,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         }
                         Err(err) => {
-                            eprintln!("{}", err)
+                            tracing::error!("Could not remove product: {err:#}");
                         }
                     }
                 }

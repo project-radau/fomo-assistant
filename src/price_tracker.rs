@@ -31,7 +31,7 @@ pub async fn check_products(conn: &Connection) -> Result<Vec<CheckResult>> {
             Ok(product) => {
                 match database::add_price_entry(&conn, product_db.id, product.value_in_cents(), get_current_time_in_ms()) {
                     Ok(_) => {}
-                    Err(err) => eprintln!("{}", err)
+                    Err(err) => tracing::error!("Could not save price history: {err:#}")
                 }
 
                 let status = if product.value_in_cents() <= product_db.threshold_in_cents() {
@@ -60,7 +60,7 @@ pub async fn check_products(conn: &Connection) -> Result<Vec<CheckResult>> {
                 });
             }
             Err(err) => {
-                eprintln!("{}", err);
+                tracing::warn!("Could not scrape product {}: {err:#}", product_db.url);
                 results.push(CheckResult {
                     product_name: product_db.url,
                     current_price: None,
@@ -80,16 +80,21 @@ pub async fn run_automatic_checks() -> Result<()> {
     let conn = database::open_database()?;
 
     loop {
+        tracing::info!("Automatic price check started");
         match check_products(&conn).await {
             Ok(results) => {
+                tracing::info!(
+                    "Automatic price check completed: {} products checked",
+                    results.len()
+                );
                 if let Err(error) =
                     crate::telegram::send_price_alerts(&conn, &results).await
                 {
-                    eprintln!("Error sending automatic check results: {error}");
+                    tracing::error!("Error sending automatic price alerts: {error:#}");
                 }
             }
             Err(error) => {
-                eprintln!("Automatic price check failed: {error}");
+                tracing::error!("Automatic price check failed: {error:#}");
             }
         }
 

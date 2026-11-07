@@ -117,7 +117,7 @@ pub async fn run_bot(conn: &mut Connection) -> Result<()> {
                                     if chat_id == chat_id_json {
                                         if let Some(text) = update["message"]["text"].as_str() {
                                             if let Err(err) = process_telegram_message(conn, text).await {
-                                                eprintln!("Error processing Telegram message: {err}");
+                                                tracing::error!("Error processing Telegram message: {err:#}");
                                                 send_message("Error processing command.").await?;
                                             }
                                         }
@@ -126,13 +126,13 @@ pub async fn run_bot(conn: &mut Connection) -> Result<()> {
                                     }
                                     else
                                     {
-                                        eprintln!("unknown chat id");
+                                        tracing::warn!("Received Telegram update from unknown chat ID");
                                         offset = update_id + 1;
                                         database::save_telegram_offset(&conn, offset)?;
                                     }
                                 }
                                 else {
-                                    eprintln!("could not read chat id")
+                                    tracing::warn!("Could not read chat ID from Telegram update");
                                 }
                             }
                             None => {}
@@ -141,7 +141,8 @@ pub async fn run_bot(conn: &mut Connection) -> Result<()> {
                 }
             }
             Err(err) => {
-                eprintln!("{}", err);
+                tracing::error!("Failed to retrieve Telegram updates: {err:#}");
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
             }
         }
     }
