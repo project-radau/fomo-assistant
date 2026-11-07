@@ -13,6 +13,7 @@ pub struct CheckResult {
     pub status: CheckStatus,
     pub alert_due: bool,
     pub product_id: i32,
+    pub product_url: String,
 }
 
 pub enum CheckStatus {
@@ -56,18 +57,20 @@ pub async fn check_products(conn: &Connection) -> Result<Vec<CheckResult>> {
                     target_price: product_db.threshold,
                     status: status,
                     alert_due: alert_due,
-                    product_id: product_db.id
+                    product_id: product_db.id,
+                    product_url: product_db.url.clone(),
                 });
             }
             Err(err) => {
                 tracing::warn!("Could not scrape product {}: {err:#}", product_db.url);
                 results.push(CheckResult {
-                    product_name: product_db.url,
+                    product_name: product_db.url.clone(),
                     current_price: None,
                     target_price: product_db.threshold,
                     status: CheckStatus::Error,
                     alert_due: false,
                     product_id: product_db.id,
+                    product_url: product_db.url.clone(),
                 });
             }
         }

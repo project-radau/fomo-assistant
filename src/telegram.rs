@@ -387,10 +387,11 @@ pub async fn send_price_alerts(
         if should_send_alert {
             if let Some(price) = result.current_price {
                 let alert_message = format!(
-                    "Price alert!\n{}\nCurrent price: {:.2}\nTarget price: {:.2}",
+                    "Price alert!\n{}\nCurrent price: {:.2}\nTarget price: {:.2}\nProduct URL: {}",
                     result.product_name,
                     price,
-                    result.target_price
+                    result.target_price,
+                    result.product_url
                 );
 
                 send_message(&alert_message).await?;
