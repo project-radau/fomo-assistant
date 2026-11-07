@@ -188,6 +188,22 @@ pub fn save_telegram_offset(
 pub fn create_backup(conn: &Connection) -> anyhow::Result<()> {
     std::fs::create_dir_all("backups")?;
 
+    let today = Local::now().format("%Y-%m-%d").to_string();
+    let backup_prefix = format!("backup_{today}_");
+
+    let backups = list_backups()?;
+
+    let backup_exists_today = backups.iter().any(|path| {
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with(&backup_prefix))
+    });
+
+    if backup_exists_today {
+        tracing::info!("Database backup for today already exists; skipping");
+        return Ok(());
+    }
+    
     let timestamp = Local::now().format("%Y-%m-%d_%H-%M-%S");
     let backup_path = format!("backups/backup_{timestamp}.db");
 
