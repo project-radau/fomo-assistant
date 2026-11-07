@@ -104,7 +104,9 @@ pub async fn run_bot(conn: &mut Connection) -> Result<()> {
 
     let mut offset = database::get_telegram_offset(&conn)?.unwrap_or(0);
 
-    set_bot_commands().await?;
+    if let Err(error) = set_bot_commands().await {
+        tracing::warn!("Could not register Telegram bot commands: {error:#}");
+    }
     
     loop {
         match get_updates(offset).await {

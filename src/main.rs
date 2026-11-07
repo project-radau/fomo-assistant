@@ -33,8 +33,8 @@ enum Commands {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt::init();
     dotenvy::dotenv().ok();
+    tracing_subscriber::fmt::init();
 
     let mut conn = database::open_database()?;
 
