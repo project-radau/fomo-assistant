@@ -2,7 +2,6 @@ use crate::product::Product;
 use scraper::Selector;
 use anyhow::Context;
 
-
 pub async fn scrape_product(url: &str) -> anyhow::Result<Product> {
     let body = reqwest::get(url)
         .await
@@ -37,7 +36,6 @@ pub async fn scrape_product(url: &str) -> anyhow::Result<Product> {
     
     Ok(Product::new(product_title, current_price))
 }
-
 
 fn cleanup_current_value(s: &str) -> String {
     s

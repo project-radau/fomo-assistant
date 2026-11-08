@@ -4,7 +4,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use chrono::{Local, Timelike, Duration as ChronoDuration};
 
 use crate::database;
-use crate::scraper;
 
 pub struct CheckResult {
     pub product_name: String,
@@ -28,7 +27,7 @@ pub async fn check_products(conn: &Connection) -> Result<Vec<CheckResult>> {
     let current_products_db = database::get_products(&conn)?;
 
     for product_db in current_products_db {
-        match scraper::scrape_product(&product_db.url).await {
+        match crate::scraper::scrape_product(&product_db.url).await {
             Ok(product) => {
                 match database::add_price_entry(&conn, product_db.id, product.value_in_cents(), get_current_time_in_ms()) {
                     Ok(_) => {}
@@ -139,7 +138,6 @@ fn is_alert_due(
         return true;
     }
 
-    // Sonst keinen Alarm senden.
     false
 }
 

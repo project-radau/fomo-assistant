@@ -28,7 +28,8 @@ enum Commands {
     },
     Remove,
     List,
-    Check
+    Check,
+    Test
 }
 
 #[tokio::main]
@@ -175,6 +176,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             println!("{table}");
+        },
+        Commands::Test => {
+            match crate::scraper::amazon_browser::test_browser_scrape(
+                "https://www.amazon.de/-/en/Legend-Zelda-Standard-Nintendo-Download/dp/B0HLMTJ2WV"
+            ).await {
+                Ok(product) => {
+                    println!("Product: {}", product);
+                    println!("Price in cents: {}", product.value_in_cents());
+                }
+                Err(err) => {
+                    println!("Browser scraper error: {err:#}");
+                }
+            }
         }
     }
 
